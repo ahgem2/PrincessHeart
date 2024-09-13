@@ -1,0 +1,264 @@
+<!DOCTYPE HTML>
+<HTML>
+    <HEAD>
+        <TITLE>Beating Heart with Particles</TITLE>  
+        <style>
+            html, body { 
+                height: 100%;
+                padding: 0;
+                margin: 0;
+                background: #000;
+            }
+
+            canvas { 
+                position: absolute;
+                width: 100%;
+                height: 100%;
+            }
+        </style>
+    </HEAD>
+    <BODY>
+        <canvas id="pinkboard"></canvas>
+        <script>
+    // This next part will show the number of particles, how long it lasts, the px/s, and particle size. The speed of the beating heart it set to 1 and you can adjust
+    // as you like. beat scale is quite important for it to scale the inner heart boundary where the particles come from.
+            var settings = {
+                particles: {
+                    length: 500,
+                    duration: 2,
+                    velocity: 100,
+                    effect: -0.75,
+                    minSize: 1.25,
+                    maxSize: 4.0,
+                },
+                heart: {
+                    beatSpeed: 1,
+                    beatScale: 1.2
+                }
+            };
+    // First we have a variable for tracking time which should be equal to 0 at the beginning. Then made an array of vender prefixes. As hard as it was, we want to get
+    // an animation, so we use a method called requestAnimationFrame. For a safety net, I added fallback in time and a callback function. Update time at the end. where b 
+    // , the base time is equal to d and f. Make a Point Class for 2D using X and Y. After, we need clone, length normalize for functionalities.
+            (function() {
+                var b = 0;
+                var c = ["ms", "moz", "webkit", "o"];
+                for (var a = 0; a < c.length && !window.requestAnimationFrame; ++a) {
+                    window.requestAnimationFrame = window[c[a] + "RequestAnimationFrame"];
+                    window.cancelAnimationFrame = window[c[a] + "CancelAnimationFrame"] || window[c[a] + "CancelRequestAnimationFrame"];
+                }
+                if (!window.requestAnimationFrame) {
+                    window.requestAnimationFrame = function(h, e) {
+                        var d = new Date().getTime();
+                        var f = Math.max(0, 16 - (d - b));
+                        var g = window.setTimeout(function() {
+                            h(d + f)
+                        }, f);
+                        b = d + f;
+                        return g;
+                    }
+                }
+                if (!window.cancelAnimationFrame) {
+                    window.cancelAnimationFrame = function(d) {
+                        clearTimeout(d)
+                    }
+                }
+            }());
+
+            var Point = (function() {
+                function Point(x, y) {
+                    this.x = (typeof x !== 'undefined') ? x : 0;
+                    this.y = (typeof y !== 'undefined') ? y : 0;
+                }
+                Point.prototype.clone = function() {
+                    return new Point(this.x, this.y);
+                };
+                Point.prototype.length = function(length) {
+                    if (typeof length == 'undefined')
+                        return Math.sqrt(this.x * this.x + this.y * this.y);
+                    this.normalize();
+                    this.x *= length;
+                    this.y *= length;
+                    return this;
+                };
+                Point.prototype.normalize = function() {
+                    var length = this.length();
+                    this.x /= length;
+                    this.y /= length;
+                    return this;
+                };
+
+                return Point;
+            })();
+    // Here, we create a variable class for the particle and it's with a start position which is on the circle. Then the partcles will start to go to x, y, dx, dy and shift
+    // positions due to it leaning to velocity. We reset the particle age in time. We reverse velocity when the particle is outside of canvas boundaries hence the particles
+    // that look like they go the same position. Now we make the partiles fully opaque and visable using Particle.prototype.draw. function. I made it pink because of 
+    // the Lighter and Princess Chinese Drama.
+
+            var Particle = (function() {
+                function Particle() {
+                    this.position = new Point();
+                    this.velocity = new Point();
+                    this.age = 0;
+                    this.size = Math.random() * (settings.particles.maxSize - settings.particles.minSize) + settings.particles.minSize; // Randomize size
+                }
+                Particle.prototype.initialize = function(x, y, dx, dy) {
+                    this.position.x = x;
+                    this.position.y = y;
+                    this.velocity.x = dx;
+                    this.velocity.y = dy;
+                    this.age = 0;
+                };
+                Particle.prototype.update = function(deltaTime) {
+                    this.position.x += this.velocity.x * deltaTime;
+                    this.position.y += this.velocity.y * deltaTime;
+
+                    if (this.position.x < 0 || this.position.x > window.innerWidth) {
+                        this.velocity.x *= -1;
+                    }
+                    if (this.position.y < 0 || this.position.y > window.innerHeight) {
+                        this.velocity.y *= -1;
+                    }
+
+                    this.age += deltaTime; 
+                };
+                Particle.prototype.draw = function(context) {
+                    context.globalAlpha = 1; // Ensure particles are fully opaque
+                    context.beginPath();
+                    context.arc(this.position.x, this.position.y, this.size / 2, 0, 2 * Math.PI);
+                    context.fillStyle = '#ea80b0'; // Pink color
+                    context.fill();
+                };
+
+                return Particle;
+            })();
+    // Making a pool of particles to have that many particles effect, we use addition, update, and redering. Using a constructor, it will make a fixed-size array
+    // of particles. Adding new particles with set positions and velocity in the .add function. The .update function helps update all active particles
+    // based on age of particles. Then, .draw helps draw onto the html page or canvas.
+
+            var ParticlePool = (function() {
+                var particles, firstActive = 0, firstFree = 0, duration = settings.particles.duration;
+
+                function ParticlePool(length) {
+                    particles = new Array(length);
+                    for (var i = 0; i < particles.length; i++)
+                        particles[i] = new Particle();
+                }
+                ParticlePool.prototype.add = function(x, y, dx, dy) {
+                    particles[firstFree].initialize(x, y, dx, dy);
+                    firstFree++;
+
+                    if (firstFree == particles.length) {
+                        firstFree = 0;
+                    }
+                    if (firstActive == firstFree) {
+                        firstActive++;
+                    }
+                    if (firstActive == particles.length) {
+                        firstActive = 0;
+                    }
+                };
+                ParticlePool.prototype.update = function(deltaTime) {
+                    var i;
+
+                    if (firstActive < firstFree) {
+                        for (i = firstActive; i < firstFree; i++) {
+                            particles[i].update(deltaTime);
+                        }
+                    }
+                    if (firstFree < firstActive) {
+                        for (i = firstActive; i < particles.length; i++) {
+                            particles[i].update(deltaTime);
+                        }
+                        for (i = 0; i < firstFree; i++) {
+                            particles[i].update(deltaTime);
+                        }
+                    }
+                    while (particles[firstActive].age >= duration && firstActive != firstFree) {
+                        firstActive++;
+                        if (firstActive == particles.length) {
+                            firstActive = 0;
+                        }
+                    }
+                };
+                ParticlePool.prototype.draw = function(context) {
+                    if (firstActive < firstFree) {
+                        for (i = firstActive; i < firstFree; i++) {
+                            particles[i].draw(context);
+                        }
+                    }
+                    if (firstFree < firstActive) {
+                        for (i = firstActive; i < particles.length; i++) {
+                            particles[i].draw(context);
+                        }
+                        for (i = 0; i < firstFree; i++) {
+                            particles[i].draw(context);
+                        }
+                    }
+                };
+
+                return ParticlePool;
+            })();
+    // Get 2D drawing context.
+            (function(canvas) {
+                var context = canvas.getContext('2d'), 
+                    particles = new ParticlePool(settings.particles.length), 
+                    particleRate = settings.particles.length / settings.particles.duration, 
+                    time;
+    // 1 for expanding, -1 for contracting in scaling and direction.            
+                let heartScale = 1;
+                let beatDirection = 1;
+    // Another function on the pointonheart to calculate particle position on heart shape based on the angle.
+                function pointOnHeart(t) {
+                    return new Point(
+                        160 * Math.pow(Math.sin(t), 3) * heartScale,
+                        130 * Math.cos(t) - 50 * Math.cos(2 * t) - 20 * Math.cos(3 * t) - 10 * Math.cos(4 * t) + 25 * heartScale
+                    );
+                }
+    // Function to render particles on the canvas
+                function render() {
+                    requestAnimationFrame(render);
+                    var newTime = new Date().getTime() / 1000, deltaTime = newTime - (time || newTime);
+                    time = newTime;
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    var amount = particleRate * deltaTime;
+
+    // Adjust the heart's scale for it to beat or change scaling boundary.
+                    heartScale += beatDirection * deltaTime * settings.heart.beatSpeed;
+                    if (heartScale >= settings.heart.beatScale || heartScale <= 1) {
+                        beatDirection *= -1;
+                    }
+
+                    for (var i = 0; i < amount; i++) { 
+                        var t = Math.PI - 2 * Math.PI * Math.random();
+                        var pos = pointOnHeart(t);
+                        var dir = pos.clone().length(settings.particles.velocity);
+                        particles.add(canvas.width / 2 + pos.x, canvas.height / 2 - pos.y, dir.x, -dir.y);
+                    }
+
+                    particles.update(deltaTime);
+                    particles.draw(context); 
+                }
+
+                function refreshParticles() {
+                    particles = new ParticlePool(settings.particles.length);
+                }
+
+                function onResize() {
+                    canvas.width  = canvas.clientWidth;
+                    canvas.height = canvas.clientHeight;
+                }
+
+                window.onresize = onResize;
+                
+                setTimeout(function() {
+                    onResize();
+                    render();
+                }, 10);
+
+    // Refresh particles every 2 seconds on html page.
+
+                setInterval(refreshParticles, 2000);
+            })(document.getElementById('pinkboard'));
+        </script>
+    </BODY>
+</HTML>
